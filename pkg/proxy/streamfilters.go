@@ -92,9 +92,7 @@ func (s *downStream) runAppendTrailersFilters(filter *activeStreamSenderFilter, 
 	var index int
 	var f *activeStreamSenderFilter
 
-	if filter != nil {
-		index = filter.index + 1
-	}
+	index = s.receiverFiltersIndex
 
 	for ; index < len(s.senderFilters); index++ {
 		f = s.senderFilters[index]
@@ -114,9 +112,7 @@ func (s *downStream) runReceiveHeadersFilters(filter *activeStreamReceiverFilter
 	var index int
 	var f *activeStreamReceiverFilter
 
-	if filter != nil {
-		index = filter.index + 1
-	}
+	index = s.receiverFiltersIndex
 
 	for ; index < len(s.receiverFilters); index++ {
 		f = s.receiverFilters[index]
@@ -144,9 +140,7 @@ func (s *downStream) runReceiveDataFilters(filter *activeStreamReceiverFilter, d
 	var index int
 	var f *activeStreamReceiverFilter
 
-	if filter != nil {
-		index = filter.index + 1
-	}
+	index = s.receiverFiltersIndex
 
 	for ; index < len(s.receiverFilters); index++ {
 		f = s.receiverFilters[index]
@@ -173,9 +167,7 @@ func (s *downStream) runReceiveTrailersFilters(filter *activeStreamReceiverFilte
 	var index int
 	var f *activeStreamReceiverFilter
 
-	if filter != nil {
-		index = filter.index + 1
-	}
+	index = s.receiverFiltersIndex
 
 	for ; index < len(s.receiverFilters); index++ {
 		f = s.receiverFilters[index]
@@ -311,29 +303,9 @@ func (f *activeStreamReceiverFilter) doContinue() {
 	}
 
 	f.stopped = false
-	hasBuffedData := f.activeStream.downstreamReqDataBuf != nil
-	hasTrailer := f.activeStream.downstreamReqTrailers != nil
 
-	if !f.headersContinued {
-		f.headersContinued = true
-
-		endStream := f.activeStream.downstreamRecvDone && !hasBuffedData && !hasTrailer
-		f.activeStream.doReceiveHeaders(f, f.activeStream.downstreamReqHeaders, endStream)
-	}
-
-	if hasBuffedData || f.stoppedNoBuf {
-		if f.stoppedNoBuf || f.activeStream.downstreamReqDataBuf == nil {
-			f.activeStream.downstreamReqDataBuf = buffer.NewIoBuffer(0)
-			f.activeStream.downstreamReqDataBuf.Count(1)
-		}
-
-		endStream := f.activeStream.downstreamRecvDone && !hasTrailer
-		f.activeStream.doReceiveData(f, f.activeStream.downstreamReqDataBuf, endStream)
-	}
-
-	if hasTrailer {
-		f.activeStream.doReceiveTrailers(f, f.activeStream.downstreamReqTrailers)
-	}
+	f.activeStream.receiverFiltersIndex = f.index + 1
+	f.activeStream.receiverFiltersAgain = true
 }
 
 func (f *activeStreamReceiverFilter) handleBufferData(buf types.IoBuffer) {
@@ -344,6 +316,7 @@ func (f *activeStreamReceiverFilter) handleBufferData(buf types.IoBuffer) {
 		}
 
 		f.activeStream.downstreamReqDataBuf.ReadFrom(buf)
+
 	}
 }
 

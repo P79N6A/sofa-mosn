@@ -65,7 +65,7 @@ func (r *retryState) retry(headers types.HeaderMap, reason types.StreamResetReas
 		return check
 	}
 
-	r.retryTimer = r.scheduleRetry(doRetry)
+	//r.retryTimer = r.scheduleRetry(doRetry)
 
 	return 0
 }

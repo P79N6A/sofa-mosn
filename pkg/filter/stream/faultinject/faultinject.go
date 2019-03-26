@@ -90,11 +90,10 @@ type streamFaultInjectFilter struct {
 func NewFilter(ctx context.Context, cfg *v2.StreamFaultInject) types.StreamReceiverFilter {
 	log.DefaultLogger.Debugf("create a new fault inject filter")
 	return &streamFaultInjectFilter{
-		ctx:       ctx,
-		isDelayed: false,
-		config:    makefaultInjectConfig(cfg),
-		stop:      make(chan struct{}),
-		rander:    rand.New(rand.NewSource(time.Now().UnixNano())),
+		ctx:    ctx,
+		config: makefaultInjectConfig(cfg),
+		stop:   make(chan struct{}),
+		rander: rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -135,17 +134,13 @@ func (f *streamFaultInjectFilter) OnReceiveHeaders(ctx context.Context, headers 
 	}
 	// TODO: some parameters can get from request header
 	if delay := f.getDelayDuration(); delay > 0 {
-		f.isDelayed = true
-		go func() { // start a timer
-			log.DefaultLogger.Debugf("start a delay timer")
-			select {
-			case <-time.After(delay):
-				f.doDelayInject(headers)
-			case <-f.stop:
-				log.DefaultLogger.Debugf("timer is stopped")
-				return
-			}
-		}()
+		log.DefaultLogger.Debugf("start a delay timer")
+		select {
+		case <-time.After(delay):
+		case <-f.stop:
+			log.DefaultLogger.Debugf("timer is stopped")
+			return types.StreamHeadersFilterStop
+		}
 		// TODO: stats
 		f.handler.RequestInfo().SetResponseFlag(types.DelayInjected)
 		return types.StreamHeadersFilterStop
@@ -158,17 +153,11 @@ func (f *streamFaultInjectFilter) OnReceiveHeaders(ctx context.Context, headers 
 }
 
 func (f *streamFaultInjectFilter) OnReceiveData(ctx context.Context, buf types.IoBuffer, endStream bool) types.StreamDataFilterStatus {
-	if !f.isDelayed {
-		return types.StreamDataFilterContinue
-	}
-	return types.StreamDataFilterStopAndBuffer
+	return types.StreamDataFilterContinue
 }
 
 func (f *streamFaultInjectFilter) OnReceiveTrailers(ctx context.Context, trailers types.HeaderMap) types.StreamTrailersFilterStatus {
-	if !f.isDelayed {
-		return types.StreamTrailersFilterContinue
-	}
-	return types.StreamTrailersFilterStop
+	return types.StreamTrailersFilterContinue
 }
 
 func (f *streamFaultInjectFilter) OnDestroy() {
@@ -200,15 +189,6 @@ func (f *streamFaultInjectFilter) getDelayDuration() time.Duration {
 		return 0
 	}
 	return f.config.fixedDelay
-}
-
-func (f *streamFaultInjectFilter) doDelayInject(headers types.HeaderMap) {
-	// abort maybe called after delay
-	if f.isAbort() {
-		f.abort(headers)
-	} else {
-		f.handler.ContinueReceiving()
-	}
 }
 
 func (f *streamFaultInjectFilter) isAbort() bool {
