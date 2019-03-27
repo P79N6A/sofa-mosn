@@ -44,18 +44,23 @@ import (
 var (
 	errExit    = errors.New("downstream exit")
 	errRetry   = errors.New("downstream retry")
+	errFilter  = errors.New("downstream filter")
 	errExpired = errors.New("downstream expired")
 )
 
 type phase int
 
 const (
-	matchRoute phase = iota
+	initPhase phase = iota
+	downFilter
+	matchRoute
+	downFilterAfterRoute
 	downRecvHeader
 	downRecvData
 	downRecvTrailer
 	retry
 	waitNofity
+	upFilter
 	upRecvHeader
 	upRecvData
 	upRecvTrailer
@@ -294,13 +299,15 @@ func (s *downStream) OnDecode(ctx context.Context, headers types.HeaderMap, data
 			}
 		}()
 
-		p := matchRoute
+		p := initPhase
 		for i := 0; i < 5; i++ {
 			err := s.decode(ctx, id, p)
-			p = matchRoute
+			p = initPhase
 			switch err {
 			case errRetry:
 				p = retry
+				continue
+			case errFilter:
 				continue
 			case errExit:
 				return
@@ -322,9 +329,22 @@ func (s *downStream) decode(ctx context.Context, id uint32, p phase) error {
 	var respTrailers types.HeaderMap
 
 	switch p {
+	case initPhase:
+		p++
+		fallthrough
+
+	case downFilter:
+		p++
+		fallthrough
+
 	case matchRoute:
 		p++
 		fallthrough
+
+	case downFilterAfterRoute:
+		p++
+		fallthrough
+
 	case downRecvHeader:
 		if s.downstreamReqHeaders != nil {
 			s.ReceiveHeaders(s.downstreamReqHeaders, s.downstreamReqDataBuf == nil && s.downstreamReqTrailers == nil)
@@ -335,6 +355,7 @@ func (s *downStream) decode(ctx context.Context, id uint32, p phase) error {
 		}
 		p++
 		fallthrough
+
 	case downRecvData:
 		if s.downstreamReqDataBuf != nil {
 			s.downstreamReqDataBuf.Count(1)
@@ -346,6 +367,7 @@ func (s *downStream) decode(ctx context.Context, id uint32, p phase) error {
 		}
 		p++
 		fallthrough
+
 	case downRecvTrailer:
 		if s.downstreamReqTrailers != nil {
 			s.ReceiveTrailers(s.downstreamReqTrailers)
@@ -356,6 +378,7 @@ func (s *downStream) decode(ctx context.Context, id uint32, p phase) error {
 		}
 		p = waitNofity
 		fallthrough
+
 	case retry:
 		if p == retry {
 			s.doRetry()
@@ -365,6 +388,7 @@ func (s *downStream) decode(ctx context.Context, id uint32, p phase) error {
 		}
 		p++
 		fallthrough
+
 	case waitNofity:
 		if err := s.waitNotify(id); err != nil {
 			return err
@@ -378,6 +402,11 @@ func (s *downStream) decode(ctx context.Context, id uint32, p phase) error {
 		respTrailers = s.downstreamRespTrailers
 		p++
 		fallthrough
+
+	case upFilter:
+		p++
+		fallthrough
+
 	case upRecvHeader:
 		// send downstream response
 		if respHeaders != nil {
@@ -389,6 +418,7 @@ func (s *downStream) decode(ctx context.Context, id uint32, p phase) error {
 		}
 		p++
 		fallthrough
+
 	case upRecvData:
 		if respData != nil {
 			upstreamRequest.ReceiveData(respData, respTrailers == nil)
@@ -399,6 +429,7 @@ func (s *downStream) decode(ctx context.Context, id uint32, p phase) error {
 		}
 		p++
 		fallthrough
+
 	case upRecvTrailer:
 		if respTrailers != nil {
 			upstreamRequest.ReceiveTrailers(respTrailers)
@@ -1274,7 +1305,18 @@ func (s *downStream) sendNotify() {
 	}
 }
 
+func (s *downStream) cleanNotify() {
+	select {
+	case <-s.notify:
+	default:
+	}
+}
+
 func (s *downStream) waitNotify(id uint32) error {
+	if s.ID != id {
+		return errExpired
+	}
+
 	s.logger.Debugf("waitNotify begin %p %d", s, s.ID)
 	select {
 	case <-s.notify:
@@ -1287,6 +1329,8 @@ func (s *downStream) processError(id uint32) error {
 		return errExpired
 	}
 	s.logger.Debugf("processError begin %p %d", s, s.ID)
+
+	s.cleanNotify()
 
 	var err error
 	if atomic.LoadUint32(&s.upstreamReset) == 1 {
@@ -1315,7 +1359,7 @@ func (s *downStream) processError(id uint32) error {
 
 	if s.receiverFiltersAgain {
 		s.receiverFiltersAgain = false
-		return errRetry
+		return errFilter
 	}
 
 	return err
