@@ -24,6 +24,9 @@ import (
 	"github.com/alipay/sofa-mosn/pkg/buffer"
 	"github.com/alipay/sofa-mosn/pkg/protocol"
 	"github.com/alipay/sofa-mosn/pkg/types"
+	"github.com/alipay/sofa-mosn/pkg/log"
+	"time"
+	"github.com/alipay/sofa-mosn/pkg/network"
 )
 
 // StreamReceiverFilter
@@ -56,7 +59,7 @@ func TestRunReiverFilters(t *testing.T) {
 			filters: []*mockStreamReceiverFilter{
 				{
 					headersStatus:  types.StreamHeadersFilterStop,
-					dataStatus:     types.StreamDataFilterContinue,
+					dataStatus:     types.StreamDataFilterStop,
 					trailersStatus: types.StreamTrailersFilterContinue,
 				},
 				{
@@ -103,18 +106,21 @@ func TestRunReiverFilters(t *testing.T) {
 				routersWrapper: &mockRouterWrapper{},
 				clusterManager: &mockClusterManager{},
 			},
+			logger: log.DefaultLogger,
+			requestInfo:&network.RequestInfo{},
+			notify: make(chan struct{}, 1),
 		}
 		for _, f := range tc.filters {
 			s.AddStreamReceiverFilter(f)
 		}
 		// mock run
-		s.doReceiveHeaders(nil, nil, false)
-		// to continue data
+		s.downstreamReqHeaders = protocol.CommonHeader{}
 		s.downstreamReqDataBuf = buffer.NewIoBuffer(0)
-		s.doReceiveData(nil, s.downstreamReqDataBuf, false)
-		// to continue trailer
 		s.downstreamReqTrailers = protocol.CommonHeader{}
-		s.doReceiveTrailers(nil, s.downstreamReqTrailers)
+		s.OnDecode(context.Background(),s.downstreamReqHeaders, s.downstreamReqDataBuf, s.downstreamReqTrailers)
+
+		time.Sleep(100*time.Millisecond)
+
 		for j, f := range tc.filters {
 			if !(f.onHeaders == 1 && f.onData == 1 && f.onTrailers == 1) {
 				t.Errorf("#%d.%d stream filter is not called; OnHeader:%d, OnData:%d, OnTrailer:%d", i, j, f.onHeaders, f.onData, f.onTrailers)
@@ -149,7 +155,7 @@ func TestRunSenderFilters(t *testing.T) {
 			filters: []*mockStreamSenderFilter{
 				{
 					headersStatus:  types.StreamHeadersFilterStop,
-					dataStatus:     types.StreamDataFilterContinue,
+					dataStatus:     types.StreamDataFilterStop,
 					trailersStatus: types.StreamTrailersFilterContinue,
 				},
 				{
@@ -195,12 +201,13 @@ func TestRunSenderFilters(t *testing.T) {
 			s.AddStreamSenderFilter(f)
 		}
 		// mock run
+		s.downstreamRespDataBuf = buffer.NewIoBuffer(0)
+		s.downstreamRespTrailers = protocol.CommonHeader{}
+
 		s.doAppendHeaders(nil, nil, false)
 		// to continue data
-		s.downstreamRespDataBuf = buffer.NewIoBuffer(0)
 		s.doAppendData(nil, s.downstreamRespDataBuf, false)
 		// to continue trailer
-		s.downstreamRespTrailers = protocol.CommonHeader{}
 		s.doAppendTrailers(nil, s.downstreamRespTrailers)
 		for j, f := range tc.filters {
 			if !(f.onHeaders == 1 && f.onData == 1 && f.onTrailers == 1) {

@@ -92,7 +92,9 @@ func (s *downStream) runAppendTrailersFilters(filter *activeStreamSenderFilter, 
 	var index int
 	var f *activeStreamSenderFilter
 
-	index = s.receiverFiltersIndex
+	if filter != nil {
+		index = filter.index + 1
+	}
 
 	for ; index < len(s.senderFilters); index++ {
 		f = s.senderFilters[index]
