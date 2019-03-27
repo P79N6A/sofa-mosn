@@ -1249,7 +1249,6 @@ func (s *downStream) processError(id uint32) error {
 	if atomic.LoadUint32(&s.downstreamReset) == 1 {
 		s.logger.Errorf("processError downstreamReset downStream id: %d", s.ID)
 		s.ResetStream(s.resetReason)
-		err = errExit
 		return err
 	}
 

@@ -79,7 +79,6 @@ func parseStreamFaultInjectConfig(c interface{}) (*faultInjectConfig, bool) {
 // streamFaultInjectFilter is an implement of types.StreamReceiverFilter
 type streamFaultInjectFilter struct {
 	ctx       context.Context
-	isDelayed bool
 	handler   types.StreamReceiverFilterHandler
 	config    *faultInjectConfig
 	stop      chan struct{}
@@ -141,9 +140,6 @@ func (f *streamFaultInjectFilter) OnReceiveHeaders(ctx context.Context, headers 
 			log.DefaultLogger.Debugf("timer is stopped")
 			return types.StreamHeadersFilterStop
 		}
-		// TODO: stats
-		f.handler.RequestInfo().SetResponseFlag(types.DelayInjected)
-		return types.StreamHeadersFilterStop
 	}
 	if f.isAbort() {
 		f.abort(headers)
