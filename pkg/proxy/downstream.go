@@ -47,6 +47,20 @@ var (
 	errExpired = errors.New("downstream expired")
 )
 
+type phase int
+
+const (
+	matchRoute phase = iota
+	downRecvHeader
+	downRecvData
+	downRecvTrailer
+	retry
+	waitNofity
+	upRecvHeader
+	upRecvData
+	upRecvTrailer
+)
+
 // types.StreamEventListener
 // types.StreamReceiveListener
 // types.FilterChainFactoryCallbacks
@@ -280,11 +294,13 @@ func (s *downStream) OnDecode(ctx context.Context, headers types.HeaderMap, data
 			}
 		}()
 
-		var err error
+		p := matchRoute
 		for i := 0; i < 5; i++ {
-			err = s.decode(ctx, id, err)
+			err := s.decode(ctx, id, p)
+			p = matchRoute
 			switch err {
 			case errRetry:
+				p = retry
 				continue
 			case errExit:
 				return
@@ -297,11 +313,19 @@ func (s *downStream) OnDecode(ctx context.Context, headers types.HeaderMap, data
 	})
 }
 
-func (s *downStream) decode(ctx context.Context, id uint32, derr error) error {
+func (s *downStream) decode(ctx context.Context, id uint32, p phase) error {
 	s.logger.Debugf("downstream OnDecode send upstream request %+v", s.downstreamReqHeaders)
 
-	if derr != errRetry {
-		// send upstream request
+	var upstreamRequest *upstreamRequest
+	var respHeaders types.HeaderMap
+	var respData types.IoBuffer
+	var respTrailers types.HeaderMap
+
+	switch p {
+	case matchRoute:
+		p++
+		fallthrough
+	case downRecvHeader:
 		if s.downstreamReqHeaders != nil {
 			s.ReceiveHeaders(s.downstreamReqHeaders, s.downstreamReqDataBuf == nil && s.downstreamReqTrailers == nil)
 
@@ -309,7 +333,9 @@ func (s *downStream) decode(ctx context.Context, id uint32, derr error) error {
 				return err
 			}
 		}
-
+		p++
+		fallthrough
+	case downRecvData:
 		if s.downstreamReqDataBuf != nil {
 			s.downstreamReqDataBuf.Count(1)
 			s.ReceiveData(s.downstreamReqDataBuf, s.downstreamReqTrailers == nil)
@@ -318,7 +344,9 @@ func (s *downStream) decode(ctx context.Context, id uint32, derr error) error {
 				return err
 			}
 		}
-
+		p++
+		fallthrough
+	case downRecvTrailer:
 		if s.downstreamReqTrailers != nil {
 			s.ReceiveTrailers(s.downstreamReqTrailers)
 
@@ -326,51 +354,69 @@ func (s *downStream) decode(ctx context.Context, id uint32, derr error) error {
 				return err
 			}
 		}
-	} else {
-		s.doRetry()
-		if err := s.processError(id); err != nil {
+		p = waitNofity
+		fallthrough
+	case retry:
+		if p == retry {
+			s.doRetry()
+			if err := s.processError(id); err != nil {
+				return err
+			}
+		}
+		p++
+		fallthrough
+	case waitNofity:
+		if err := s.waitNotify(id); err != nil {
 			return err
 		}
-	}
 
-	// wait notify
-	if err := s.waitNotify(id); err != nil {
-		return err
-	}
+		s.logger.Debugf("downstream OnDecode send downstream response %+v", s.downstreamRespHeaders)
 
-	s.logger.Debugf("downstream OnDecode send downstream response %+v", s.downstreamRespHeaders)
+		upstreamRequest = s.upstreamRequest
+		respHeaders = s.downstreamRespHeaders
+		respData = s.downstreamRespDataBuf
+		respTrailers = s.downstreamRespTrailers
+		p++
+		fallthrough
+	case upRecvHeader:
+		// send downstream response
+		if respHeaders != nil {
+			upstreamRequest.ReceiveHeaders(respHeaders, respData == nil && respTrailers == nil)
 
-	upstreamRequest := s.upstreamRequest
-	respHeaders := s.downstreamRespHeaders
-	respData := s.downstreamRespDataBuf
-	respTrailers := s.downstreamRespTrailers
-
-	// send downstream response
-	if respHeaders != nil {
-		upstreamRequest.ReceiveHeaders(respHeaders, respData == nil && respTrailers == nil)
-
-		if err := s.processError(id); err != nil {
-			return err
+			if err := s.processError(id); err != nil {
+				return err
+			}
 		}
-	}
+		p++
+		fallthrough
+	case upRecvData:
+		if respData != nil {
+			upstreamRequest.ReceiveData(respData, respTrailers == nil)
 
-	if respData != nil {
-		upstreamRequest.ReceiveData(respData, respTrailers == nil)
-
-		if err := s.processError(id); err != nil {
-			return err
+			if err := s.processError(id); err != nil {
+				return err
+			}
 		}
-	}
+		p++
+		fallthrough
+	case upRecvTrailer:
+		if respTrailers != nil {
+			upstreamRequest.ReceiveTrailers(respTrailers)
 
-	if respTrailers != nil {
-		upstreamRequest.ReceiveTrailers(respTrailers)
-
-		if err := s.processError(id); err != nil {
-			return err
+			if err := s.processError(id); err != nil {
+				return err
+			}
 		}
+		p++
+		fallthrough
+	default:
 	}
 
 	return nil
+}
+
+func (s *downStream) MatchRoute() {
+
 }
 
 // types.StreamReceiveListener
@@ -518,13 +564,8 @@ func (s *downStream) doReceiveHeaders(filter *activeStreamReceiverFilter, header
 	s.retryState = newRetryState(route.RouteRule().Policy().RetryPolicy(), headers, s.cluster, prot)
 
 	//Build Request
-	if s.upstreamRequest != nil {
-		//retry
-		s.upstreamRequest = &upstreamRequest{}
-	} else {
-		proxyBuffers := proxyBuffersByContext(s.context)
-		s.upstreamRequest = &proxyBuffers.request
-	}
+	proxyBuffers := proxyBuffersByContext(s.context)
+	s.upstreamRequest = &proxyBuffers.request
 	s.upstreamRequest.downStream = s
 	s.upstreamRequest.proxy = s.proxy
 	s.upstreamRequest.protocol = prot
