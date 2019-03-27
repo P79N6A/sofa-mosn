@@ -280,8 +280,9 @@ func (s *downStream) OnDecode(ctx context.Context, headers types.HeaderMap, data
 			}
 		}()
 
+		var err error
 		for i := 0; i < 5; i++ {
-			err := s.decode(ctx, id)
+			err = s.decode(ctx, id, err)
 			switch err {
 			case errRetry:
 				continue
@@ -296,30 +297,37 @@ func (s *downStream) OnDecode(ctx context.Context, headers types.HeaderMap, data
 	})
 }
 
-func (s *downStream) decode(ctx context.Context, id uint32) error {
+func (s *downStream) decode(ctx context.Context, id uint32, derr error) error {
 	s.logger.Debugf("downstream OnDecode send upstream request %+v", s.downstreamReqHeaders)
 
-	// send upstream request
-	if s.downstreamReqHeaders != nil {
-		s.ReceiveHeaders(s.downstreamReqHeaders, s.downstreamReqDataBuf == nil && s.downstreamReqTrailers == nil)
+	if derr != errRetry {
+		// send upstream request
+		if s.downstreamReqHeaders != nil {
+			s.ReceiveHeaders(s.downstreamReqHeaders, s.downstreamReqDataBuf == nil && s.downstreamReqTrailers == nil)
 
-		if err := s.processError(id); err != nil {
-			return err
+			if err := s.processError(id); err != nil {
+				return err
+			}
 		}
-	}
 
-	if s.downstreamReqDataBuf != nil {
-		s.downstreamReqDataBuf.Count(1)
-		s.ReceiveData(s.downstreamReqDataBuf, s.downstreamReqTrailers == nil)
+		if s.downstreamReqDataBuf != nil {
+			s.downstreamReqDataBuf.Count(1)
+			s.ReceiveData(s.downstreamReqDataBuf, s.downstreamReqTrailers == nil)
 
-		if err := s.processError(id); err != nil {
-			return err
+			if err := s.processError(id); err != nil {
+				return err
+			}
 		}
-	}
 
-	if s.downstreamReqTrailers != nil {
-		s.ReceiveTrailers(s.downstreamReqTrailers)
+		if s.downstreamReqTrailers != nil {
+			s.ReceiveTrailers(s.downstreamReqTrailers)
 
+			if err := s.processError(id); err != nil {
+				return err
+			}
+		}
+	} else {
+		s.doRetry()
 		if err := s.processError(id); err != nil {
 			return err
 		}
