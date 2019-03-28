@@ -174,7 +174,7 @@ func (s *downStream) cleanStream() {
 
 	// reset corresponding upstream stream
 	if s.upstreamRequest != nil && !s.upstreamProcessDone {
-		s.logger.Debugf("downStream upstreamRequest resetStream %v", s)
+		s.logger.Debugf("downStream upstreamRequest resetStream %+v", s.upstreamRequest)
 		s.upstreamProcessDone = true
 		s.upstreamRequest.resetStream()
 	}
@@ -1331,6 +1331,7 @@ func (s *downStream) processError(id uint32) error {
 	if atomic.LoadUint32(&s.downstreamReset) == 1 {
 		s.logger.Errorf("processError downstreamReset downStream id: %d", s.ID)
 		s.ResetStream(s.resetReason)
+		err = types.ErrExit
 		return err
 	}
 

@@ -62,8 +62,10 @@ type upstreamRequest struct {
 // 4. on upstream response receive error
 // 5. before a retry
 func (r *upstreamRequest) resetStream() {
-	r.requestSender.GetStream().RemoveEventListener(r)
-	r.requestSender.GetStream().ResetStream(types.StreamLocalReset)
+	if r.requestSender != nil {
+		r.requestSender.GetStream().RemoveEventListener(r)
+		r.requestSender.GetStream().ResetStream(types.StreamLocalReset)
+	}
 }
 
 // types.StreamEventListener
