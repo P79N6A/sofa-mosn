@@ -774,7 +774,7 @@ func (s *downStream) setupPerReqTimeout() {
 		}
 
 		ID := s.ID
-		s.perRetryTimer = utils.NewTimer(timeout.TryTimeout*time.Second,
+		s.perRetryTimer = utils.NewTimer(timeout.TryTimeout,
 			func() {
 				if atomic.LoadUint32(&s.downstreamCleaned) == 1 {
 					return

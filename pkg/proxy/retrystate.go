@@ -100,6 +100,10 @@ func (r *retryState) doRetryCheck(headers types.HeaderMap, reason types.StreamRe
 		if reason == types.StreamConnectionFailed {
 			return true
 		}
+
+		if reason == types.UpstreamPerTryTimeout {
+			return true
+		}
 		// more policy
 
 	}

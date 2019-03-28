@@ -419,9 +419,8 @@ func (c *connection) onRead() {
 func (c *connection) Write(buffers ...types.IoBuffer) error {
 	defer func() {
 		if r := recover(); r != nil {
-			c.logger.Errorf("connection has closed. Connection = %d, Local Address = %s, Remote Address = %s",
-				c.id, c.LocalAddr().String(), c.RemoteAddr().String())
-
+			c.logger.Errorf("connection has closed. Connection = %d, Local Address = %+v, Remote Address = %+v",
+				c.id, c.LocalAddr(), c.RemoteAddr())
 		}
 	}()
 
@@ -628,7 +627,7 @@ func (c *connection) Close(ccType types.ConnectionCloseType, eventType types.Con
 	}
 
 	// connection failed in client mode
-	if reflect.ValueOf(c.rawConnection).IsNil() {
+	if c.rawConnection == nil || reflect.ValueOf(c.rawConnection).IsNil() {
 		return nil
 	}
 
