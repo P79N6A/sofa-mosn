@@ -174,6 +174,7 @@ func (s *downStream) cleanStream() {
 
 	// reset corresponding upstream stream
 	if s.upstreamRequest != nil && !s.upstreamProcessDone {
+		s.logger.Debugf("downStream upstreamRequest resetStream %v", s)
 		s.upstreamProcessDone = true
 		s.upstreamRequest.resetStream()
 	}
@@ -261,8 +262,6 @@ func (s *downStream) OnReceive(ctx context.Context, headers types.HeaderMap, dat
 	}
 	s.downstreamReqTrailers = trailers
 
-	s.downstreamRecvDone = true
-
 	id := s.ID
 	// goroutine for proxy
 	pool.ScheduleAuto(func() {
@@ -281,9 +280,11 @@ func (s *downStream) OnReceive(ctx context.Context, headers types.HeaderMap, dat
 			p = types.InitPhase
 			switch err {
 			case types.ErrRetry:
+				s.logger.Errorf("downstream retry %+v", s)
 				p = types.Retry
 				continue
 			case types.ErrFilter:
+				s.logger.Debugf("downstream redo match route %+v", s)
 				p = types.MatchRoute
 				continue
 			case types.ErrExit:
@@ -298,7 +299,7 @@ func (s *downStream) OnReceive(ctx context.Context, headers types.HeaderMap, dat
 }
 
 func (s *downStream) decode(ctx context.Context, id uint32, p types.Phase) error {
-	s.logger.Debugf("downstream OnReceive send upstream request %+v", s.downstreamReqHeaders)
+	s.logger.Debugf("downstream OnReceive send upstream request %+v", s)
 
 	var upstreamRequest *upstreamRequest
 	var respHeaders types.HeaderMap
@@ -311,6 +312,7 @@ func (s *downStream) decode(ctx context.Context, id uint32, p types.Phase) error
 		fallthrough
 
 	case types.DownFilter:
+		s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
 		if s.runReceiveFilters(p, s.downstreamReqHeaders, s.downstreamReqDataBuf, s.downstreamReqTrailers) {
 			return nil
 		}
@@ -322,6 +324,7 @@ func (s *downStream) decode(ctx context.Context, id uint32, p types.Phase) error
 		fallthrough
 
 	case types.MatchRoute:
+		s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
 		s.matchRoute()
 		if err := s.processError(id); err != nil {
 			return err
@@ -330,6 +333,7 @@ func (s *downStream) decode(ctx context.Context, id uint32, p types.Phase) error
 		fallthrough
 
 	case types.DownFilterAfterRoute:
+		s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
 		if s.runReceiveFilters(p, s.downstreamReqHeaders, s.downstreamReqDataBuf, s.downstreamReqTrailers) {
 			return nil
 		}
@@ -342,6 +346,7 @@ func (s *downStream) decode(ctx context.Context, id uint32, p types.Phase) error
 
 	case types.DownRecvHeader:
 		if s.downstreamReqHeaders != nil {
+			s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
 			s.ReceiveHeaders(s.downstreamReqHeaders, s.downstreamReqDataBuf == nil && s.downstreamReqTrailers == nil)
 
 			if err := s.processError(id); err != nil {
@@ -353,6 +358,7 @@ func (s *downStream) decode(ctx context.Context, id uint32, p types.Phase) error
 
 	case types.DownRecvData:
 		if s.downstreamReqDataBuf != nil {
+			s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
 			s.downstreamReqDataBuf.Count(1)
 			s.ReceiveData(s.downstreamReqDataBuf, s.downstreamReqTrailers == nil)
 
@@ -365,6 +371,7 @@ func (s *downStream) decode(ctx context.Context, id uint32, p types.Phase) error
 
 	case types.DownRecvTrailer:
 		if s.downstreamReqTrailers != nil {
+			s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
 			s.ReceiveTrailers(s.downstreamReqTrailers)
 
 			if err := s.processError(id); err != nil {
@@ -377,15 +384,17 @@ func (s *downStream) decode(ctx context.Context, id uint32, p types.Phase) error
 
 	case types.Retry:
 		if p == types.Retry {
+			s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
 			s.doRetry()
 			if err := s.processError(id); err != nil {
 				return err
 			}
+			p++
 		}
-		p++
 		fallthrough
 
 	case types.WaitNofity:
+		s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
 		if err := s.waitNotify(id); err != nil {
 			return err
 		}
@@ -400,6 +409,7 @@ func (s *downStream) decode(ctx context.Context, id uint32, p types.Phase) error
 		fallthrough
 
 	case types.UpFilter:
+		s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
 		if s.runAppendFilters(p, respHeaders, respData, respTrailers) {
 			return nil
 		}
@@ -413,6 +423,7 @@ func (s *downStream) decode(ctx context.Context, id uint32, p types.Phase) error
 	case types.UpRecvHeader:
 		// send downstream response
 		if respHeaders != nil {
+			s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
 			upstreamRequest.ReceiveHeaders(respHeaders, respData == nil && respTrailers == nil)
 
 			if err := s.processError(id); err != nil {
@@ -424,6 +435,7 @@ func (s *downStream) decode(ctx context.Context, id uint32, p types.Phase) error
 
 	case types.UpRecvData:
 		if respData != nil {
+			s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
 			upstreamRequest.ReceiveData(respData, respTrailers == nil)
 
 			if err := s.processError(id); err != nil {
@@ -435,6 +447,7 @@ func (s *downStream) decode(ctx context.Context, id uint32, p types.Phase) error
 
 	case types.UpRecvTrailer:
 		if respTrailers != nil {
+			s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
 			upstreamRequest.ReceiveTrailers(respTrailers)
 
 			if err := s.processError(id); err != nil {
@@ -907,12 +920,12 @@ func (s *downStream) doAppendTrailers(trailers types.HeaderMap) {
 // ~~~ upstream event handler
 func (s *downStream) onUpstreamReset(reason types.StreamResetReason) {
 	// todo: update stats
-	log.DefaultLogger.Tracef("on upstream reset invoked")
+	log.DefaultLogger.Tracef("on upstream reset invoked reason %v", reason)
 
 	// see if we need a retry
 	if reason != types.UpstreamGlobalTimeout &&
 		!s.downstreamResponseStarted && s.retryState != nil {
-		retryCheck := s.retryState.retry(nil, reason, s.doRetry)
+		retryCheck := s.retryState.retry(nil, reason)
 
 		if retryCheck == types.ShouldRetry && s.setupRetry(true) {
 			if s.upstreamRequest != nil && s.upstreamRequest.host != nil {
@@ -922,6 +935,7 @@ func (s *downStream) onUpstreamReset(reason types.StreamResetReason) {
 
 			// setup retry timer and return
 			// clear reset flag
+			log.DefaultLogger.Tracef("on upstream doRetry reason %v", reason)
 			atomic.CompareAndSwapUint32(&s.upstreamReset, 1, 0)
 			return
 		} else if retryCheck == types.RetryOverflow {
@@ -964,7 +978,7 @@ func (s *downStream) onUpstreamHeaders(headers types.HeaderMap, endStream bool) 
 
 	// check retry
 	if s.retryState != nil {
-		retryCheck := s.retryState.retry(headers, "", s.doRetry)
+		retryCheck := s.retryState.retry(headers, "")
 
 		if retryCheck == types.ShouldRetry && s.setupRetry(endStream) {
 			if s.upstreamRequest != nil && s.upstreamRequest.host != nil {
@@ -1086,6 +1100,9 @@ func (s *downStream) setupRetry(endStream bool) bool {
 
 // Note: retry-timer MUST be stopped before active stream got recycled, otherwise resetting stream's properties will cause panic here
 func (s *downStream) doRetry() {
+	// no reuse buffer
+	atomic.StoreUint32(&s.reuseBuffer, 0)
+
 	pool, err := s.initializeUpstreamConnectionPool(s)
 
 	if err != nil {
@@ -1104,19 +1121,20 @@ func (s *downStream) doRetry() {
 	s.upstreamRequest.appendHeaders(s.downstreamReqHeaders,
 		s.downstreamReqDataBuf == nil && s.downstreamReqTrailers == nil)
 
-	if s.upstreamRequest != nil {
-		if s.downstreamReqDataBuf != nil {
-			s.downstreamReqDataBuf.Count(1)
-			s.upstreamRequest.appendData(s.downstreamReqDataBuf, s.downstreamReqTrailers == nil)
-		}
-
-		if s.downstreamReqTrailers != nil {
-			s.upstreamRequest.appendTrailers(s.downstreamReqTrailers)
-		}
-
-		// setup per try timeout timer
-		s.setupPerReqTimeout()
+	if s.downstreamReqDataBuf != nil {
+		s.downstreamReqDataBuf.Count(1)
+		s.upstreamRequest.appendData(s.downstreamReqDataBuf, s.downstreamReqTrailers == nil)
 	}
+
+	if s.downstreamReqTrailers != nil {
+		s.upstreamRequest.appendTrailers(s.downstreamReqTrailers)
+	}
+
+	// setup per try timeout timer
+	s.setupPerReqTimeout()
+
+	s.upstreamRequestSent = true
+	s.downstreamRecvDone = true
 }
 
 // Downstream got reset in proxy context on scenario below:
@@ -1302,7 +1320,6 @@ func (s *downStream) processError(id uint32) error {
 	if s.ID != id {
 		return types.ErrExpired
 	}
-	s.logger.Debugf("processError begin %p %d", s, s.ID)
 
 	var err error
 	if atomic.LoadUint32(&s.upstreamReset) == 1 {

@@ -159,7 +159,6 @@ func TestRunSenderFilters(t *testing.T) {
 			}
 		}
 	}
-
 }
 
 // Mock stream filters
