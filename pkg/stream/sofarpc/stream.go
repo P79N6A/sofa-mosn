@@ -218,7 +218,7 @@ func (conn *streamConnection) handleCommand(ctx context.Context, model interface
 		timeout := strconv.Itoa(timeoutInt) // timeout, ms
 		cmd.Set(types.HeaderGlobalTimeout, timeout)
 
-		stream.receiver.OnDecode(stream.ctx, cmd, cmd.Data(), nil)
+		stream.receiver.OnReceive(stream.ctx, cmd, cmd.Data(), nil)
 
 	}
 }

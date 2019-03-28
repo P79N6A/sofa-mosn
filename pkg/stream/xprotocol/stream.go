@@ -213,7 +213,7 @@ func (conn *streamConnection) OnDecde(context context.Context, streamID string, 
 	}
 	if stream, ok := conn.activeStream.Get(streamID); ok {
 		log.DefaultLogger.Tracef("xprotocol stream on decode header and data")
-		stream.streamReceiver.OnDecode(context, headers, data, nil)
+		stream.streamReceiver.OnReceive(context, headers, data, nil)
 
 		if stream.direction == ClientStream {
 			// for client stream, remove stream on response read

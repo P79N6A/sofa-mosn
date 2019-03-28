@@ -113,7 +113,7 @@ func (f *streamFaultInjectFilter) SetReceiveFilterHandler(handler types.StreamRe
 	f.handler = handler
 }
 
-func (f *streamFaultInjectFilter) OnReceiveHeaders(ctx context.Context, headers types.HeaderMap, endStream bool) types.StreamHeadersFilterStatus {
+func (f *streamFaultInjectFilter) OnReceive(ctx context.Context, headers types.HeaderMap, buf types.IoBuffer, trailers types.HeaderMap) types.StreamFilterStatus {
 	log.DefaultLogger.Debugf("fault inject filter do receive headers")
 	if route := f.handler.Route(); route != nil {
 		// TODO: makes ReadPerRouteConfig as the StreamReceiverFilter's function
@@ -121,7 +121,7 @@ func (f *streamFaultInjectFilter) OnReceiveHeaders(ctx context.Context, headers 
 	}
 	if !f.matchUpstream() {
 		log.DefaultLogger.Debugf("upstream is not matched")
-		return types.StreamHeadersFilterContinue
+		return types.StreamFilterContinue
 	}
 	// TODO: check downstream nodes, support later
 	//if !f.downstreamNodes() {
@@ -129,7 +129,7 @@ func (f *streamFaultInjectFilter) OnReceiveHeaders(ctx context.Context, headers 
 	//}
 	if !router.ConfigUtilityInst.MatchHeaders(headers, f.config.headers) {
 		log.DefaultLogger.Debugf("header is not matched, request headers: %v, config headers: %v", headers, f.config.headers)
-		return types.StreamHeadersFilterContinue
+		return types.StreamFilterContinue
 	}
 	// TODO: some parameters can get from request header
 	if delay := f.getDelayDuration(); delay > 0 {
@@ -138,22 +138,14 @@ func (f *streamFaultInjectFilter) OnReceiveHeaders(ctx context.Context, headers 
 		case <-time.After(delay):
 		case <-f.stop:
 			log.DefaultLogger.Debugf("timer is stopped")
-			return types.StreamHeadersFilterStop
+			return types.StreamFilterStop
 		}
 	}
 	if f.isAbort() {
 		f.abort(headers)
-		return types.StreamHeadersFilterStop
+		return types.StreamFilterStop
 	}
-	return types.StreamHeadersFilterContinue
-}
-
-func (f *streamFaultInjectFilter) OnReceiveData(ctx context.Context, buf types.IoBuffer, endStream bool) types.StreamDataFilterStatus {
-	return types.StreamDataFilterContinue
-}
-
-func (f *streamFaultInjectFilter) OnReceiveTrailers(ctx context.Context, trailers types.HeaderMap) types.StreamTrailersFilterStatus {
-	return types.StreamTrailersFilterContinue
+	return types.StreamFilterContinue
 }
 
 func (f *streamFaultInjectFilter) OnDestroy() {
