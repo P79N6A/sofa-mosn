@@ -920,7 +920,7 @@ func (s *downStream) doAppendTrailers(trailers types.HeaderMap) {
 // ~~~ upstream event handler
 func (s *downStream) onUpstreamReset(reason types.StreamResetReason) {
 	// todo: update stats
-	log.DefaultLogger.Tracef("on upstream reset invoked reason %v", reason)
+	s.logger.Errorf("on upstream reset invoked reason %v", reason)
 
 	// see if we need a retry
 	if reason != types.UpstreamGlobalTimeout &&
@@ -935,7 +935,7 @@ func (s *downStream) onUpstreamReset(reason types.StreamResetReason) {
 
 			// setup retry timer and return
 			// clear reset flag
-			log.DefaultLogger.Tracef("on upstream doRetry reason %v", reason)
+			s.logger.Errorf("on upstream doRetry reason %v", reason)
 			atomic.CompareAndSwapUint32(&s.upstreamReset, 1, 0)
 			return
 		} else if retryCheck == types.RetryOverflow {
