@@ -276,6 +276,7 @@ func (s *downStream) OnReceive(ctx context.Context, headers types.HeaderMap, dat
 
 		p := types.InitPhase
 		for i := 0; i < 5; i++ {
+			s.cleanNotify()
 			err := s.decode(ctx, id, p)
 			p = types.InitPhase
 			switch err {
@@ -370,6 +371,7 @@ func (s *downStream) decode(ctx context.Context, id uint32, p types.Phase) error
 				return err
 			}
 		}
+		// skip types.Retry
 		p = types.WaitNofity
 		fallthrough
 
@@ -1301,8 +1303,6 @@ func (s *downStream) processError(id uint32) error {
 		return types.ErrExpired
 	}
 	s.logger.Debugf("processError begin %p %d", s, s.ID)
-
-	s.cleanNotify()
 
 	var err error
 	if atomic.LoadUint32(&s.upstreamReset) == 1 {
