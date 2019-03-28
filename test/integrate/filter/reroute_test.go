@@ -32,7 +32,7 @@ type injectConfigFactory struct{}
 
 func (f *injectConfigFactory) CreateFilterChain(context context.Context, callbacks types.StreamFilterChainFactoryCallbacks) {
 	filter := &injectFilter{}
-	callbacks.AddStreamReceiverFilter(filter)
+	callbacks.AddStreamReceiverFilter(filter, types.DownFilterAfterRoute)
 }
 
 func createInjectFactory(conf map[string]interface{}) (types.StreamFilterChainFactory, error) {
