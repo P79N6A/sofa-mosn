@@ -53,7 +53,7 @@ func (f *injectFilter) SetReceiveFilterHandler(handler types.StreamReceiverFilte
 
 func (f *injectFilter) OnReceive(ctx context.Context, headers types.HeaderMap, buf types.IoBuffer, trailers types.HeaderMap) types.StreamFilterStatus {
 	f.inject()
-	return types.StreamFilterMatchRoute
+	return types.StreamFilterReMatchRoute
 }
 
 func (f *injectFilter) OnDestroy() {}

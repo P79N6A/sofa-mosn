@@ -56,7 +56,7 @@ func TestRunReiverFilters(t *testing.T) {
 					status: types.StreamFilterContinue,
 				},
 				{
-					status: types.StreamFilterMatchRoute,
+					status: types.StreamFilterReMatchRoute,
 				},
 				// to prevent proxy. if a real stream filter returns all stop,
 				// it should call SendHijackReply, or the stream will be hung up
@@ -69,7 +69,7 @@ func TestRunReiverFilters(t *testing.T) {
 		{
 			filters: []*mockStreamReceiverFilter{
 				{
-					status: types.StreamFilterMatchRoute,
+					status: types.StreamFilterReMatchRoute,
 				},
 				{
 					status: types.StreamFilterStop,

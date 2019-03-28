@@ -49,7 +49,7 @@ func (s *downStream) runReceiveFilters(p types.Phase, headers types.HeaderMap, d
 			return true
 		}
 
-		if status == types.StreamFilterMatchRoute {
+		if status == types.StreamFilterReMatchRoute {
 			s.receiverFiltersIndex++
 			s.receiverFiltersAgain = true
 			return false

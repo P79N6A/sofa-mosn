@@ -246,7 +246,7 @@ type StreamSenderFilter interface {
 	StreamFilterBase
 
 	// Append encodes request/response
-	Append(ctx context.Context, headers HeaderMap,buf IoBuffer, trailers HeaderMap) StreamFilterStatus
+	Append(ctx context.Context, headers HeaderMap, buf IoBuffer, trailers HeaderMap) StreamFilterStatus
 
 	// SetSenderFilterHandler sets the StreamSenderFilterHandler
 	SetSenderFilterHandler(handler StreamSenderFilterHandler)
@@ -334,49 +334,14 @@ type StreamFilterChainFactoryCallbacks interface {
 
 type StreamFilterStatus string
 
-// StreamHeadersFilterStatus types
+// StreamFilterStatus types
 const (
 	// Continue filter chain iteration.
 	StreamFilterContinue StreamFilterStatus = "Continue"
-	// Do not iterate to next iterator. Filter calls ContinueReceiving to continue.
+	// Do not iterate to next iterator.
 	StreamFilterStop StreamFilterStatus = "Stop"
 
-	StreamFilterMatchRoute StreamFilterStatus = "Match Route"
-)
-
-// StreamHeadersFilterStatus type
-type StreamHeadersFilterStatus string
-
-// StreamHeadersFilterStatus types
-const (
-	// Continue filter chain iteration.
-	StreamHeadersFilterContinue StreamHeadersFilterStatus = "Continue"
-	// Do not iterate to next iterator. Filter calls ContinueReceiving to continue.
-	StreamHeadersFilterStop StreamHeadersFilterStatus = "Stop"
-)
-
-// StreamDataFilterStatus type
-type StreamDataFilterStatus string
-
-// StreamDataFilterStatus types
-const (
-	// Continue filter chain iteration
-	StreamDataFilterContinue StreamDataFilterStatus = "Continue"
-	// Do not iterate to next iterator, and buffer body data in controller for later use
-	StreamDataFilterStop StreamDataFilterStatus = "Stop"
-	// Do not iterate to next iterator, and buffer body data in controller for later use
-	StreamDataFilterStopAndBuffer StreamDataFilterStatus = "StopAndBuffer"
-)
-
-// StreamTrailersFilterStatus type
-type StreamTrailersFilterStatus string
-
-// StreamTrailersFilterStatus types
-const (
-	// Continue filter chain iteration
-	StreamTrailersFilterContinue StreamTrailersFilterStatus = "Continue"
-	// Do not iterate to next iterator. Filter calls ContinueReceiving to continue.
-	StreamTrailersFilterStop StreamTrailersFilterStatus = "Stop"
+	StreamFilterReMatchRoute StreamFilterStatus = "Retry Match Route"
 )
 
 // PoolFailureReason type
