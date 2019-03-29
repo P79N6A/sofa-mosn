@@ -22,10 +22,7 @@ import (
 )
 
 var (
-	ErrExit    = errors.New("downstream exit")
-	ErrRetry   = errors.New("downstream retry")
-	ErrFilter  = errors.New("downstream filter")
-	ErrExpired = errors.New("downstream expired")
+	ErrExit    = errors.New("downstream process completed")
 )
 
 type Phase int
@@ -44,4 +41,5 @@ const (
 	UpRecvHeader
 	UpRecvData
 	UpRecvTrailer
+	End
 )

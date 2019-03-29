@@ -267,199 +267,192 @@ func (s *downStream) OnReceive(ctx context.Context, headers types.HeaderMap, dat
 	pool.ScheduleAuto(func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.DefaultLogger.Errorf("downStream OnReceive panic %v, downstream %p old id: %d, new id: %d",
+				log.DefaultLogger.Errorf("downStream OnReceive panic %v, downstream %+v old id: %d, new id: %d",
 					r, s, id, s.ID)
 				debug.PrintStack()
 			}
 		}()
 
-		p := types.InitPhase
+		phase := types.InitPhase
 		for i := 0; i < 5; i++ {
 			s.cleanNotify()
-			err := s.decode(ctx, id, p)
-			p = types.InitPhase
-			switch err {
-			case types.ErrRetry:
-				s.logger.Errorf("downstream retry %+v", s)
-				p = types.Retry
-				continue
-			case types.ErrFilter:
+			phase = s.receive(ctx, id, phase)
+			if phase == types.End {
+				return
+			}
+
+			switch phase {
+			case types.MatchRoute:
 				s.logger.Debugf("downstream redo match route %+v", s)
-				p = types.MatchRoute
-				continue
-			case types.ErrExit:
-				return
-			case types.ErrExpired:
-				return
-			default:
-				return
+			case types.Retry:
+				s.logger.Errorf("downstream retry %+v", s)
 			}
 		}
 	})
 }
 
-func (s *downStream) decode(ctx context.Context, id uint32, p types.Phase) error {
-	s.logger.Debugf("downstream OnReceive send upstream request %+v", s)
+func (s *downStream) receive(ctx context.Context, id uint32, phase types.Phase) types.Phase {
+	s.logger.Tracef("downstream OnReceive send upstream request %+v", s)
 
 	var upstreamRequest *upstreamRequest
 	var respHeaders types.HeaderMap
 	var respData types.IoBuffer
 	var respTrailers types.HeaderMap
 
-	switch p {
+	switch phase {
 	case types.InitPhase:
-		p++
+		phase++
 		fallthrough
 
 	case types.DownFilter:
-		s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
-		if s.runReceiveFilters(p, s.downstreamReqHeaders, s.downstreamReqDataBuf, s.downstreamReqTrailers) {
-			return nil
+		s.logger.Tracef("downStream Phase %d, id %d", phase, s.ID)
+		if s.runReceiveFilters(phase, s.downstreamReqHeaders, s.downstreamReqDataBuf, s.downstreamReqTrailers) {
+			return types.End
 		}
 
-		if err := s.processError(id); err != nil {
-			return err
+		if p, err := s.processError(id); err != nil {
+			return p
 		}
-		p++
+		phase++
 		fallthrough
 
 	case types.MatchRoute:
-		s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
+		s.logger.Tracef("downStream Phase %d, id %d", phase, s.ID)
 		s.matchRoute()
-		if err := s.processError(id); err != nil {
-			return err
+		if p, err := s.processError(id); err != nil {
+			return p
 		}
-		p++
+		phase++
 		fallthrough
 
 	case types.DownFilterAfterRoute:
-		s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
-		if s.runReceiveFilters(p, s.downstreamReqHeaders, s.downstreamReqDataBuf, s.downstreamReqTrailers) {
-			return nil
+		s.logger.Tracef("downStream Phase %d, id %d", phase, s.ID)
+		if s.runReceiveFilters(phase, s.downstreamReqHeaders, s.downstreamReqDataBuf, s.downstreamReqTrailers) {
+			return types.End
 		}
 
-		if err := s.processError(id); err != nil {
-			return err
+		if p, err := s.processError(id); err != nil {
+			return p
 		}
-		p++
+		phase++
 		fallthrough
 
 	case types.DownRecvHeader:
 		if s.downstreamReqHeaders != nil {
-			s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
+			s.logger.Tracef("downStream Phase %d, id %d", phase, s.ID)
 			s.ReceiveHeaders(s.downstreamReqHeaders, s.downstreamReqDataBuf == nil && s.downstreamReqTrailers == nil)
 
-			if err := s.processError(id); err != nil {
-				return err
+			if p, err := s.processError(id); err != nil {
+				return p
 			}
 		}
-		p++
+		phase++
 		fallthrough
 
 	case types.DownRecvData:
 		if s.downstreamReqDataBuf != nil {
-			s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
+			s.logger.Tracef("downStream Phase %d, id %d", phase, s.ID)
 			s.downstreamReqDataBuf.Count(1)
 			s.ReceiveData(s.downstreamReqDataBuf, s.downstreamReqTrailers == nil)
 
-			if err := s.processError(id); err != nil {
-				return err
+			if p, err := s.processError(id); err != nil {
+				return p
 			}
 		}
-		p++
+		phase++
 		fallthrough
 
 	case types.DownRecvTrailer:
 		if s.downstreamReqTrailers != nil {
-			s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
+			s.logger.Tracef("downStream Phase %d, id %d", phase, s.ID)
 			s.ReceiveTrailers(s.downstreamReqTrailers)
 
-			if err := s.processError(id); err != nil {
-				return err
+			if p, err := s.processError(id); err != nil {
+				return p
 			}
 		}
 		// skip types.Retry
-		p = types.WaitNofity
+		phase = types.WaitNofity
 		fallthrough
 
 	case types.Retry:
-		if p == types.Retry {
-			s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
+		if phase == types.Retry {
+			s.logger.Tracef("downStream Phase %d, id %d", phase, s.ID)
 			s.doRetry()
-			if err := s.processError(id); err != nil {
-				return err
+			if p, err := s.processError(id); err != nil {
+				return p
 			}
-			p++
+			phase++
 		}
 		fallthrough
 
 	case types.WaitNofity:
-		s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
-		if err := s.waitNotify(id); err != nil {
-			return err
+		s.logger.Tracef("downStream Phase %d, id %d", phase, s.ID)
+		if p, err := s.waitNotify(id); err != nil {
+			return p
 		}
 
-		s.logger.Debugf("downstream OnReceive send downstream response %+v", s.downstreamRespHeaders)
+		s.logger.Tracef("downstream OnReceive send downstream response %+v", s.downstreamRespHeaders)
 
 		upstreamRequest = s.upstreamRequest
 		respHeaders = s.downstreamRespHeaders
 		respData = s.downstreamRespDataBuf
 		respTrailers = s.downstreamRespTrailers
-		p++
+		phase++
 		fallthrough
 
 	case types.UpFilter:
-		s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
-		if s.runAppendFilters(p, respHeaders, respData, respTrailers) {
-			return nil
+		s.logger.Tracef("downStream Phase %d, id %d", phase, s.ID)
+		if s.runAppendFilters(phase, respHeaders, respData, respTrailers) {
+			return types.End
 		}
 
-		if err := s.processError(id); err != nil {
-			return err
+		if p, err := s.processError(id); err != nil {
+			return p
 		}
-		p++
+		phase++
 		fallthrough
 
 	case types.UpRecvHeader:
 		// send downstream response
 		if respHeaders != nil {
-			s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
+			s.logger.Tracef("downStream Phase %d, id %d", phase, s.ID)
 			upstreamRequest.ReceiveHeaders(respHeaders, respData == nil && respTrailers == nil)
 
-			if err := s.processError(id); err != nil {
-				return err
+			if p, err := s.processError(id); err != nil {
+				return p
 			}
 		}
-		p++
+		phase++
 		fallthrough
 
 	case types.UpRecvData:
 		if respData != nil {
-			s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
+			s.logger.Tracef("downStream Phase %d, id %d", phase, s.ID)
 			upstreamRequest.ReceiveData(respData, respTrailers == nil)
 
-			if err := s.processError(id); err != nil {
-				return err
+			if p, err := s.processError(id); err != nil {
+				return p
 			}
 		}
-		p++
+		phase++
 		fallthrough
 
 	case types.UpRecvTrailer:
 		if respTrailers != nil {
-			s.logger.Debugf("downStream Phase %d, id %d", p, s.ID)
+			s.logger.Tracef("downStream Phase %d, id %d", phase, s.ID)
 			upstreamRequest.ReceiveTrailers(respTrailers)
 
-			if err := s.processError(id); err != nil {
-				return err
+			if p, err := s.processError(id); err != nil {
+				return p
 			}
 		}
-		p++
+		phase++
 		fallthrough
 	default:
 	}
 
-	return nil
+	return types.End
 }
 
 func (s *downStream) matchRoute() {
@@ -1304,9 +1297,9 @@ func (s *downStream) cleanNotify() {
 	}
 }
 
-func (s *downStream) waitNotify(id uint32) error {
+func (s *downStream) waitNotify(id uint32) (phase types.Phase, err error) {
 	if s.ID != id {
-		return types.ErrExpired
+		return types.End, types.ErrExit
 	}
 
 	s.logger.Debugf("waitNotify begin %p %d", s, s.ID)
@@ -1316,12 +1309,12 @@ func (s *downStream) waitNotify(id uint32) error {
 	return s.processError(id)
 }
 
-func (s *downStream) processError(id uint32) error {
+func (s *downStream) processError(id uint32) (phase types.Phase, err error) {
 	if s.ID != id {
-		return types.ErrExpired
+		return types.End, types.ErrExit
 	}
 
-	var err error
+	phase = types.End
 	if atomic.LoadUint32(&s.upstreamReset) == 1 {
 		s.logger.Errorf("processError upstreamReset downStream id: %d", s.ID)
 		s.onUpstreamReset(s.resetReason)
@@ -1332,7 +1325,7 @@ func (s *downStream) processError(id uint32) error {
 		s.logger.Errorf("processError downstreamReset downStream id: %d", s.ID)
 		s.ResetStream(s.resetReason)
 		err = types.ErrExit
-		return err
+		return
 	}
 
 	if atomic.LoadUint32(&s.downstreamCleaned) == 1 {
@@ -1344,13 +1337,17 @@ func (s *downStream) processError(id uint32) error {
 	}
 
 	if s.upstreamRequest != nil && s.upstreamRequest.setupRetry {
-		return types.ErrRetry
+		phase = types.Retry
+		err = types.ErrExit
+		return
 	}
 
 	if s.receiverFiltersAgain {
 		s.receiverFiltersAgain = false
-		return types.ErrFilter
+		phase = types.DownFilterAfterRoute
+		err = types.ErrExit
+		return
 	}
 
-	return err
+	return
 }
